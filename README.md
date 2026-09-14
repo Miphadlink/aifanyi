@@ -63,4 +63,4 @@ data/         本地配置、缓存、字幕输出
 
 ## 作者
 
-ZHANGCHAO
+Mipha
