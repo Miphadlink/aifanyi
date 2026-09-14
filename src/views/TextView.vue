@@ -2,7 +2,7 @@
   <div class="page">
     <header class="page-head">
       <h1>文字翻译</h1>
-      <p>粘贴或输入文本，流式输出译文；支持历史记录。</p>
+      <p>粘贴文本或上传整个文件；可导出为文本或语音。</p>
     </header>
 
     <section class="card">
@@ -26,16 +26,21 @@
             <option value="ko">韩语</option>
           </select>
         </div>
-        <div style="align-self: flex-end; display: flex; gap: 8px">
+        <div style="align-self: flex-end; display: flex; gap: 8px; flex-wrap: wrap">
           <button class="primary" :disabled="loading || !input.trim()" @click="runTranslate">
             {{ loading ? '翻译中…' : '翻译' }}
           </button>
-          <button :disabled="!result || speaking" @click="speakResult">
-            {{ speaking ? '朗读中…' : '朗读译文' }}
-          </button>
           <button :disabled="!result" @click="copyResult">复制</button>
+          <button :disabled="!result" @click="downloadTxt">导出文本</button>
+          <button :disabled="!result || exportingAudio" @click="exportAudio">
+            {{ exportingAudio ? '合成中…' : '导出语音' }}
+          </button>
           <button :disabled="!input && !result" @click="clearAll">清空</button>
         </div>
+      </div>
+
+      <div class="row" style="margin-bottom: 12px">
+        <TtsControls :text="result" :lang="targetLang" :disabled="!result" />
       </div>
 
       <div class="grid-2">
@@ -56,7 +61,41 @@
           </div>
         </div>
       </div>
+      <div v-if="audioUrl" class="row" style="margin-top: 10px">
+        <audio controls :src="audioUrl" style="flex: 1; min-width: 220px"></audio>
+        <button @click="downloadAudio">下载 MP3</button>
+      </div>
       <div v-if="error" class="muted" style="color: var(--bad); margin-top: 8px">{{ error }}</div>
+    </section>
+
+    <section class="card">
+      <strong>上传文件整译</strong>
+      <p class="muted" style="margin: 6px 0 12px">
+        支持 txt / md / srt / vtt / csv / log / html / xml / json / docx / pdf
+      </p>
+      <div
+        class="drop-zone"
+        :class="{ dragover }"
+        @dragover.prevent="dragover = true"
+        @dragleave="dragover = false"
+        @drop.prevent="onDrop"
+        @click="pickFile"
+      >
+        <div>{{ fileBusy ? '文件翻译中…' : '点击选择文件，或拖拽到此处' }}</div>
+        <div v-if="fileMeta" class="muted" style="margin-top: 6px">
+          {{ fileMeta.original_name }} · {{ fileMeta.format }} · {{ fileMeta.chunks }} 段 · {{ fileMeta.engine }}
+        </div>
+      </div>
+      <input
+        ref="fileInput"
+        type="file"
+        accept=".txt,.md,.markdown,.srt,.vtt,.csv,.log,.html,.htm,.xml,.json,.docx,.pdf"
+        style="display: none"
+        @change="onFile"
+      />
+      <div v-if="fileMeta?.output_txt" class="row" style="margin-top: 10px">
+        <button @click="downloadFileTxt">下载文件译文 TXT</button>
+      </div>
     </section>
 
     <section class="card">
@@ -85,17 +124,34 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { speakText, translateTextStream, type TranslateResult } from '../api/client'
+import { onMounted, onUnmounted, ref } from 'vue'
+import TtsControls from '../components/TtsControls.vue'
+import {
+  exportFileTts,
+  fileAudioUrl,
+  fileDownloadUrl,
+  translateFile,
+  translateTextStream,
+  type FileTranslateResult,
+  type TranslateResult,
+} from '../api/client'
 
 const input = ref('')
 const result = ref('')
 const sourceLang = ref('auto')
 const targetLang = ref('zh')
 const loading = ref(false)
-const speaking = ref(false)
 const error = ref('')
 const meta = ref<TranslateResult | null>(null)
+
+const fileInput = ref<HTMLInputElement | null>(null)
+const dragover = ref(false)
+const fileBusy = ref(false)
+const fileMeta = ref<FileTranslateResult | null>(null)
+
+const exportingAudio = ref(false)
+const audioPath = ref('')
+const audioUrl = ref('')
 
 interface HistoryItem {
   input: string
@@ -159,17 +215,91 @@ async function copyResult() {
   if (result.value) await navigator.clipboard.writeText(result.value)
 }
 
-async function speakResult() {
+function downloadTxt() {
   if (!result.value) return
-  speaking.value = true
+  const blob = new Blob([result.value], { type: 'text/plain;charset=utf-8' })
+  triggerDownload(blob, `译文_${Date.now()}.txt`)
+}
+
+async function exportAudio() {
+  if (!result.value) return
+  exportingAudio.value = true
   error.value = ''
   try {
-    await speakText(result.value, targetLang.value)
+    const res = await exportFileTts({
+      text: result.value,
+      lang: targetLang.value,
+    })
+    audioPath.value = res.path
+    audioUrl.value = fileAudioUrl(res.path)
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
-    speaking.value = false
+    exportingAudio.value = false
   }
+}
+
+function downloadAudio() {
+  if (!audioUrl.value) return
+  triggerDownload(audioUrl.value, `译文_${Date.now()}.mp3`)
+}
+
+function triggerDownload(hrefOrBlob: string | Blob, filename: string) {
+  const a = document.createElement('a')
+  if (typeof hrefOrBlob === 'string') {
+    a.href = hrefOrBlob
+  } else {
+    a.href = URL.createObjectURL(hrefOrBlob)
+  }
+  a.download = filename
+  a.click()
+  if (typeof hrefOrBlob !== 'string') {
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000)
+  }
+}
+
+function pickFile() {
+  fileInput.value?.click()
+}
+
+function onFile(e: Event) {
+  const el = e.target as HTMLInputElement
+  const file = el.files?.[0]
+  el.value = ''
+  if (file) void handleFile(file)
+}
+
+function onDrop(e: DragEvent) {
+  dragover.value = false
+  const file = e.dataTransfer?.files?.[0]
+  if (file) void handleFile(file)
+}
+
+async function handleFile(file: File) {
+  fileBusy.value = true
+  error.value = ''
+  fileMeta.value = null
+  try {
+    const res = await translateFile(file, sourceLang.value, targetLang.value)
+    fileMeta.value = res
+    input.value = `（来自文件：${file.name}）\n${''}`
+    result.value = res.text
+    meta.value = {
+      text: res.text,
+      engine: res.engine || 'file',
+      latency_ms: 0,
+    }
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    fileBusy.value = false
+  }
+}
+
+function downloadFileTxt() {
+  if (!fileMeta.value?.output_txt) return
+  const name = `${(fileMeta.value.original_name || 'file').replace(/\.[^.]+$/, '')}_${targetLang.value}.txt`
+  window.open(fileDownloadUrl(fileMeta.value.output_txt, name), '_blank')
 }
 
 function clearAll() {
@@ -177,6 +307,9 @@ function clearAll() {
   result.value = ''
   meta.value = null
   error.value = ''
+  audioPath.value = ''
+  audioUrl.value = ''
+  fileMeta.value = null
 }
 
 function clearHistory() {
@@ -192,4 +325,7 @@ function restore(item: HistoryItem) {
 }
 
 onMounted(loadHistory)
+onUnmounted(() => {
+  /* no-op */
+})
 </script>

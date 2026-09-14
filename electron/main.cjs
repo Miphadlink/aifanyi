@@ -54,11 +54,46 @@ function apiAlive(timeoutMs = 1500) {
   })
 }
 
+function findBundledServer() {
+  const fs = require('fs')
+  const candidates = [
+    path.join(process.resourcesPath, 'server', 'ait-server', 'ait-server.exe'),
+    path.join(process.resourcesPath, 'ait-server', 'ait-server.exe'),
+    path.join(process.resourcesPath, 'server', 'ait-server.exe'),
+    path.join(__dirname, '..', 'release', 'server-dist', 'ait-server', 'ait-server.exe'),
+  ]
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p
+  }
+  return null
+}
+
 function startPythonServer() {
+  const bundled = findBundledServer()
+  if (bundled) {
+    const serverDir = path.dirname(bundled)
+    const appRoot = path.dirname(process.resourcesPath || path.join(serverDir, '..', '..'))
+    pythonProc = spawn(bundled, ['--host', '127.0.0.1', '--port', String(API_PORT)], {
+      cwd: serverDir,
+      stdio: 'ignore',
+      env: {
+        ...process.env,
+        // 数据写在应用根目录 data/，与 exe 同级
+        AI_TRANSLATOR_HOME: process.env.AI_TRANSLATOR_HOME || appRoot,
+        HF_ENDPOINT: process.env.HF_ENDPOINT || 'https://hf-mirror.com',
+        HF_HUB_DISABLE_XET: '1',
+      },
+    })
+    pythonProc.on('error', (err) => {
+      console.error('Bundled server failed', err)
+    })
+    return
+  }
+
   const root = projectRoot()
   const py = findPython(root)
   if (!py) {
-    console.warn('未找到 .venv，请先启动后端或设置 AI_TRANSLATOR_HOME')
+    console.warn('未找到内置后端或 .venv')
     return
   }
   const args = [
@@ -148,9 +183,32 @@ ipcMain.handle('dialog:openDirectory', async () => {
   return result.canceled ? null : result.filePaths[0]
 })
 
+// Windows 上 openFile+openDirectory+filters 混用会导致 exe 难选中，拆成两个对话框
+ipcMain.handle('dialog:openGameExe', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: '选择游戏主程序（Game.exe 等）',
+    properties: ['openFile'],
+    filters: [
+      { name: '游戏程序', extensions: ['exe', 'lnk'] },
+      { name: '全部文件', extensions: ['*'] },
+    ],
+  })
+  return result.canceled ? null : result.filePaths[0]
+})
+
+ipcMain.handle('dialog:openGameDir', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: '选择游戏文件夹',
+    properties: ['openDirectory'],
+  })
+  return result.canceled ? null : result.filePaths[0]
+})
+
+// 兼容旧 preload 调用
 ipcMain.handle('dialog:openGame', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ['openFile', 'openDirectory'],
+    title: '选择游戏主程序',
+    properties: ['openFile'],
     filters: [
       { name: '游戏程序', extensions: ['exe', 'lnk'] },
       { name: '全部文件', extensions: ['*'] },

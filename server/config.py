@@ -3,11 +3,26 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
 
-ROOT = Path(__file__).resolve().parent.parent
+
+def _resolve_root() -> Path:
+    """开发：仓库根；打包：exe 所在目录（resources/server/ 上一级为应用根）。"""
+    env = os.getenv("AI_TRANSLATOR_HOME")
+    if env:
+        return Path(env)
+    if getattr(sys, "frozen", False):
+        # .../AppName-win32-x64/resources/server/ait-server.exe
+        exe = Path(sys.executable).resolve().parent
+        # server -> resources -> app root
+        return exe.parent.parent
+    return Path(__file__).resolve().parent.parent
+
+
+ROOT = _resolve_root()
 DATA_DIR = ROOT / "data"
 CACHE_DIR = DATA_DIR / "cache"
 UPLOAD_DIR = DATA_DIR / "uploads"
@@ -21,9 +36,10 @@ load_dotenv(ROOT / ".env")
 SETTINGS_FILE = DATA_DIR / "settings.json"
 
 DEFAULT_SETTINGS = {
-    "api_base": os.getenv("TRANSLATE_API_BASE", "https://api.openai.com/v1"),
+    # 分发版默认为空，由用户在「设置」页自行填写，不内置任何密钥/私有地址
+    "api_base": os.getenv("TRANSLATE_API_BASE", ""),
     "api_key": os.getenv("TRANSLATE_API_KEY", ""),
-    "model": os.getenv("TRANSLATE_MODEL", "gpt-4o-mini"),
+    "model": os.getenv("TRANSLATE_MODEL", "agnes-2.5-flash"),
     # 分场景模型；空则回退 model
     "text_model": os.getenv("TEXT_MODEL", ""),
     "image_model": os.getenv("IMAGE_MODEL", ""),

@@ -12,10 +12,13 @@
         @dragover.prevent="dragover = true"
         @dragleave="dragover = false"
         @drop.prevent="onDrop"
-        @click="pickGame"
       >
-        <div>拖入游戏可执行文件或文件夹，或点击选择</div>
-        <div class="muted" style="margin-top: 6px">支持 Unity / RPG Maker / Godot 等；不注入进程</div>
+        <div>拖入游戏 exe 或文件夹到此处</div>
+        <div class="muted" style="margin-top: 6px">支持 Unity / NW.js / RPG Maker / Godot 等；不注入进程</div>
+      </div>
+      <div class="row" style="margin-top: 12px">
+        <button class="primary" @click="pickGameExe">选择游戏 EXE</button>
+        <button @click="pickGameDir">选择游戏文件夹</button>
       </div>
     </section>
 
@@ -74,13 +77,13 @@ import { computed, onUnmounted, ref } from 'vue'
 import {
   confirmGame,
   setGameCapture,
-  speakText,
   startGame,
   stopGame,
   getGameStatus,
   type GameSession,
   type OverlayLine,
 } from '../api/client'
+import { playTtsText, stopTts } from '../api/ttsPlayer'
 
 const dragover = ref(false)
 const candidates = ref<{ path: string; reason: string }[]>([])
@@ -94,21 +97,41 @@ let pollTimer: number | undefined
 
 const canOverlay = computed(() => !!session.value && session.value.status === 'running')
 
-async function pickGame() {
-  if (!window.desktop) {
+async function pickGameExe() {
+  if (!window.desktop?.openGameExe) {
     error.value = '请使用 Electron 客户端选择游戏'
     return
   }
-  const p = await window.desktop.openGame()
+  const p = await window.desktop.openGameExe()
+  if (p) await launch(p)
+}
+
+async function pickGameDir() {
+  if (!window.desktop?.openGameDir) {
+    error.value = '请使用 Electron 客户端选择游戏'
+    return
+  }
+  const p = await window.desktop.openGameDir()
   if (p) await launch(p)
 }
 
 async function onDrop(e: DragEvent) {
   dragover.value = false
   const file = e.dataTransfer?.files?.[0]
-  const path = (file as (File & { path?: string }) | undefined)?.path
+  if (!file) {
+    error.value = '未获取到拖入内容，请用点击选择'
+    return
+  }
+  // Electron 32+：必须用 webUtils.getPathForFile
+  let path: string | null = null
+  if (window.desktop?.getPathForFile) {
+    path = window.desktop.getPathForFile(file)
+  }
   if (!path) {
-    error.value = '未获取到文件路径，请用点击选择'
+    path = (file as File & { path?: string }).path || null
+  }
+  if (!path) {
+    error.value = '未能解析文件路径，请用「点击选择」游戏 exe 或文件夹'
     return
   }
   await launch(path)
@@ -168,6 +191,7 @@ async function stop() {
   try {
     await stopGame(session.value.session_id)
     capturing.value = false
+    stopTts()
     await hideOverlay()
     session.value = null
     stopPoll()
@@ -206,7 +230,7 @@ async function maybeSpeak(lines: OverlayLine[]) {
   if (latest.text === lastSpoken.value) return
   lastSpoken.value = latest.text
   try {
-    await speakText(latest.text, 'zh')
+    await playTtsText(latest.text, 'zh')
   } catch {
     // 朗读失败不打断游戏翻译
   }

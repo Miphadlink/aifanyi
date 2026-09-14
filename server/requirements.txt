@@ -23,3 +23,7 @@ imageio-ffmpeg>=0.6.0
 
 # Edge TTS 语音朗读
 edge-tts>=7.0.0
+
+# 文件翻译：docx / pdf
+python-docx>=1.1.0
+pypdf>=4.0.0

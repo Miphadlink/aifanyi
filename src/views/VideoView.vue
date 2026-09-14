@@ -125,7 +125,13 @@ async function onDrop(e: DragEvent) {
   dragover.value = false
   const file = e.dataTransfer?.files?.[0]
   if (!file) return
-  const path = (file as File & { path?: string }).path
+  let path: string | null = null
+  if (window.desktop?.getPathForFile) {
+    path = window.desktop.getPathForFile(file)
+  }
+  if (!path) {
+    path = (file as File & { path?: string }).path || null
+  }
   if (path) {
     filePath.value = path
     fileName.value = file.name
@@ -139,14 +145,17 @@ async function onDrop(e: DragEvent) {
 async function adoptFile(file: File) {
   fileName.value = file.name
   task.value = null
-  if (window.desktop) {
-    // Electron: 通过 dialog 获取绝对路径更稳；拖入时有 path
-    const path = (file as File & { path?: string }).path
-    if (path) {
-      filePath.value = path
-      browserFile.value = null
-      return
-    }
+  let path: string | null = null
+  if (window.desktop?.getPathForFile) {
+    path = window.desktop.getPathForFile(file)
+  }
+  if (!path) {
+    path = (file as File & { path?: string }).path || null
+  }
+  if (path) {
+    filePath.value = path
+    browserFile.value = null
+    return
   }
   browserFile.value = file
   filePath.value = ''

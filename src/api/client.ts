@@ -1,4 +1,4 @@
-const API_BASE = 'http://127.0.0.1:8765'
+export const API_BASE = 'http://127.0.0.1:8765'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -73,6 +73,55 @@ export function fetchModels(body?: { api_base?: string; api_key?: string }) {
     method: 'POST',
     body: JSON.stringify(body || {}),
   })
+}
+
+export interface FileTranslateResult {
+  text: string
+  source_chars: number
+  target_chars: number
+  chunks: number
+  format: string
+  output_txt: string
+  engine: string
+  original_name?: string
+}
+
+/** 上传整个文件翻译 */
+export async function translateFile(
+  file: File,
+  source_lang = 'auto',
+  target_lang = 'zh',
+): Promise<FileTranslateResult> {
+  const fd = new FormData()
+  fd.append('file', file)
+  const res = await fetch(
+    `${API_BASE}/translate/file?source_lang=${encodeURIComponent(source_lang)}&target_lang=${encodeURIComponent(target_lang)}`,
+    { method: 'POST', body: fd },
+  )
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(text || `HTTP ${res.status}`)
+  }
+  return res.json()
+}
+
+/** 下载译文 txt */
+export function fileDownloadUrl(path: string, name?: string) {
+  const q = new URLSearchParams({ path })
+  if (name) q.set('name', name)
+  return `${API_BASE}/translate/file/download?${q.toString()}`
+}
+
+/** 译文导出为 mp3 */
+export function exportFileTts(body: { text: string; lang?: string; filename?: string }) {
+  return request<{ path: string; voice?: string; chunks?: number }>('/translate/file/tts', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function fileAudioUrl(path: string) {
+  return `${API_BASE}/translate/file/audio?path=${encodeURIComponent(path)}`
 }
 
 export function translateText(body: {

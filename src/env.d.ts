@@ -14,7 +14,10 @@ interface DesktopBridge {
   openFiles: (filters?: { name: string; extensions: string[] }[]) => Promise<string[]>
   openDirectory: () => Promise<string | null>
   openGame: () => Promise<string | null>
+  openGameExe: () => Promise<string | null>
+  openGameDir: () => Promise<string | null>
   openPath: (p: string) => Promise<string>
+  getPathForFile: (file: File) => string | null
   showOverlay: () => Promise<boolean>
   hideOverlay: () => Promise<boolean>
   setClickThrough: (enabled: boolean) => Promise<boolean>

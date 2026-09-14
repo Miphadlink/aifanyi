@@ -212,6 +212,82 @@ async def api_tts_audio(path: str):
     return FileResponse(str(p), media_type="audio/mpeg", filename=p.name)
 
 
+class FileTranslateForm(BaseModel):
+    source_lang: str = "auto"
+    target_lang: str = "zh"
+
+
+class ExportTtsBody(BaseModel):
+    text: str
+    lang: str = "zh"
+    filename: str | None = None
+
+
+@app.post("/translate/file")
+async def api_translate_file(
+    file: UploadFile = File(...),
+    source_lang: str = "auto",
+    target_lang: str = "zh",
+):
+    """上传整个文本类文件并翻译。"""
+    from server.services.file_translate import SUPPORTED_EXTS, translate_file
+
+    suffix = Path(file.filename or "doc.txt").suffix.lower()
+    if suffix not in SUPPORTED_EXTS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持的格式 {suffix}，支持: {', '.join(sorted(SUPPORTED_EXTS))}",
+        )
+    dest = UPLOAD_DIR / f"{uuid.uuid4().hex}{suffix}"
+    content = await file.read()
+    dest.write_bytes(content)
+    try:
+        result = await translate_file(str(dest), source_lang, target_lang)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"文件翻译失败: {exc}") from exc
+    result["original_name"] = file.filename
+    return result
+
+
+@app.get("/translate/file/download")
+async def api_file_download(path: str, name: str | None = None):
+    from server.services.file_translate import FILE_OUT_DIR
+
+    p = Path(path).resolve()
+    root = FILE_OUT_DIR.resolve()
+    if not str(p).startswith(str(root)) or not p.is_file():
+        raise HTTPException(status_code=400, detail="非法文件路径")
+    return FileResponse(
+        str(p),
+        media_type="text/plain; charset=utf-8",
+        filename=name or p.name,
+    )
+
+
+@app.post("/translate/file/tts")
+async def api_file_tts(body: ExportTtsBody):
+    """把译文导出为整段 mp3。"""
+    from server.services.file_translate import text_to_mp3_async
+
+    result = await text_to_mp3_async(body.text, body.lang, body.filename)
+    if result.get("error"):
+        raise HTTPException(status_code=502, detail=result["error"])
+    return result
+
+
+@app.get("/translate/file/audio")
+async def api_file_audio(path: str):
+    from server.services.file_translate import FILE_OUT_DIR
+
+    p = Path(path).resolve()
+    root = FILE_OUT_DIR.resolve()
+    if not str(p).startswith(str(root)) or not p.is_file():
+        raise HTTPException(status_code=400, detail="非法音频路径")
+    return FileResponse(str(p), media_type="audio/mpeg", filename=p.name)
+
+
 @app.get("/tts/voices")
 async def api_tts_voices() -> dict:
     voices = await list_voices()

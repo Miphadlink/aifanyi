@@ -31,8 +31,23 @@ os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 
 
+def _frozen_ffmpeg_dir() -> Path | None:
+    """打包版：exe 旁的 ffmpeg/ 目录。"""
+    import sys
+
+    if not getattr(sys, "frozen", False):
+        return None
+    cand = Path(sys.executable).resolve().parent / "ffmpeg"
+    return cand if cand.is_dir() else None
+
+
 def _find_exe(name: str) -> str | None:
-    """按优先级找可执行文件：项目 tools → PATH → imageio-ffmpeg 仅 ffmpeg。"""
+    """按优先级找可执行文件：打包旁 ffmpeg → 项目 tools → PATH → imageio。"""
+    frozen = _frozen_ffmpeg_dir()
+    if frozen:
+        p = frozen / f"{name}.exe"
+        if p.exists():
+            return str(p)
     local = _LOCAL_BIN / f"{name}.exe"
     if local.exists():
         return str(local)

@@ -51,9 +51,9 @@
         <button class="primary" style="align-self: flex-end" :disabled="loading" @click="run">
           {{ loading ? '处理中…' : '识别并翻译' }}
         </button>
-        <button style="align-self: flex-end" :disabled="!result?.target || speaking" @click="speakAll">
-          {{ speaking ? '朗读中…' : '朗读译文' }}
-        </button>
+      </div>
+      <div class="row" style="margin-bottom: 12px">
+        <TtsControls :text="result?.target || ''" :lang="targetLang" :disabled="!result?.target" />
       </div>
 
       <div class="grid-2">
@@ -88,7 +88,9 @@
 
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
-import { speakText, translateImage, type ImageTranslateResult } from '../api/client'
+import TtsControls from '../components/TtsControls.vue'
+import { translateImage, type ImageTranslateResult } from '../api/client'
+import { playTtsText } from '../api/ttsPlayer'
 
 const fileInput = ref<HTMLInputElement | null>(null)
 const dragover = ref(false)
@@ -98,7 +100,6 @@ const sourceLang = ref('auto')
 const targetLang = ref('zh')
 const overlay = ref(false)
 const loading = ref(false)
-const speaking = ref(false)
 const error = ref('')
 const result = ref<ImageTranslateResult | null>(null)
 
@@ -157,19 +158,12 @@ async function run() {
 }
 
 async function speakOne(text: string) {
-  speaking.value = true
   error.value = ''
   try {
-    await speakText(text, targetLang.value)
+    await playTtsText(text, targetLang.value)
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
-  } finally {
-    speaking.value = false
   }
-}
-
-async function speakAll() {
-  if (result.value?.target) await speakOne(result.value.target)
 }
 
 onMounted(() => window.addEventListener('paste', onPaste))

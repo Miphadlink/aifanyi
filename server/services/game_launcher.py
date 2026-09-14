@@ -11,7 +11,8 @@ import win32gui
 
 EXCLUDE_NAME_RE = re.compile(
     r"(unins|uninstall|crashhandler|unitycrashhandler|dxsetup|vcredist|"
-    r"ue4prereq|dotnet|setup|launcher_helper)",
+    r"ue4prereq|dotnet|setup|launcher_helper|notification_helper|"
+    r"chromedriver|nacl_irt|helper)",
     re.I,
 )
 
@@ -20,6 +21,10 @@ def detect_candidates(path: str) -> list[dict]:
     """根据用户拖入的路径，找出可能的主程序 exe。"""
     p = Path(path)
     if p.is_file() and p.suffix.lower() == ".exe":
+        name = p.name.lower()
+        if EXCLUDE_NAME_RE.search(name) and name not in ("game.exe",):
+            # 用户明确点选了 helper 时仍给出，但标注
+            return [{"path": str(p), "reason": "用户指定（可能是辅助程序）"}]
         return [{"path": str(p), "reason": "用户指定的可执行文件"}]
     if p.is_file() and p.suffix.lower() == ".lnk":
         target = _resolve_lnk(str(p))
@@ -33,7 +38,9 @@ def detect_candidates(path: str) -> list[dict]:
     found: list[dict] = []
     scan_dirs = [root]
     for child in root.iterdir():
-        if child.is_dir() and child.name.lower() in {"win", "win64", "win32", "game", "bin"}:
+        if child.is_dir() and child.name.lower() in {
+            "win", "win64", "win32", "game", "bin", "app",
+        }:
             scan_dirs.append(child)
     for d in scan_dirs:
         try:
@@ -47,17 +54,37 @@ def detect_candidates(path: str) -> list[dict]:
                 found.append({"path": str(item), "reason": reason})
         except OSError:
             continue
-    # 优先：名字含 game / 主目录 exe
-    found.sort(key=lambda x: (0 if "game" in Path(x["path"]).name.lower() else 1, x["path"]))
+    # 优先：Game.exe > 名字含 game > 其它
+    def sort_key(x: dict) -> tuple:
+        name = Path(x["path"]).name.lower()
+        if name == "game.exe":
+            return (0, x["path"])
+        if "game" in name:
+            return (1, x["path"])
+        return (2, x["path"])
+
+    found.sort(key=sort_key)
     return found[:12]
 
 
 def _describe_game(root: Path, exe: Path) -> str:
     tags = []
-    if (exe.parent / "UnityPlayer.dll").exists() or (exe.parent / f"{exe.stem}_Data").exists():
+    parent = exe.parent
+    if (parent / "UnityPlayer.dll").exists() or (parent / f"{exe.stem}_Data").exists():
         tags.append("Unity")
+    if (parent / "GameAssembly.dll").exists():
+        tags.append("Unity/IL2CPP")
+    # NW.js / node-webkit（Game.exe + nw.dll + package.json）
+    if (parent / "nw.dll").exists() or (parent / "nw.exe").exists():
+        tags.append("NW.js")
+    elif (parent / "node.dll").exists() and (parent / "package.json").exists():
+        tags.append("NW.js")
+    if (parent / "electron.asar").exists() or (parent / "resources" / "app.asar").exists():
+        tags.append("Electron")
     if (root / "Data").exists() or (root / "www").exists() or exe.name.lower() == "game.exe":
-        tags.append("RPG Maker?")
+        # NW.js 游戏常有 www/ 或 Game.exe，避免误标 RPG Maker
+        if "NW.js" not in tags:
+            tags.append("RPG Maker?")
     if list(root.glob("*.pck")):
         tags.append("Godot?")
     if not tags:

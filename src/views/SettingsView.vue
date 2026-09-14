@@ -2,8 +2,16 @@
   <div class="page">
     <header class="page-head">
       <h1>设置</h1>
-      <p>翻译引擎、分场景模型、语言默认值。密钥仅保存在本机。</p>
+      <p>翻译引擎、分场景模型、语言默认值。密钥仅保存在本机，不会写入安装包。</p>
     </header>
+
+    <section v-if="!form.api_key" class="card" style="border-color: var(--warn)">
+      <strong>尚未配置 API</strong>
+      <p class="muted" style="margin: 6px 0 0">
+        请填写 API Base 与 API Key（OpenAI 兼容），保存后才能使用文字 / 图片 / 视频 / 游戏翻译。
+        首次可先点「获取模型列表」验证是否连通。
+      </p>
+    </section>
 
     <section class="card">
       <div class="grid-2">

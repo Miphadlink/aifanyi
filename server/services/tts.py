@@ -54,21 +54,25 @@ async def synthesize(
         return {"error": f"edge-tts 未安装: {exc}"}
 
     started = time.perf_counter()
-    try:
-        communicate = edge_tts.Communicate(text, chosen, rate=rate)
-        await communicate.save(str(out))
-    except Exception as exc:
-        return {"error": f"TTS 失败: {exc}"}
+    last_err = "未生成音频"
+    for attempt in range(3):
+        try:
+            communicate = edge_tts.Communicate(text, chosen, rate=rate)
+            await communicate.save(str(out))
+            if out.exists() and out.stat().st_size > 0:
+                return {
+                    "path": str(out),
+                    "voice": chosen,
+                    "cached": False,
+                    "latency_ms": int((time.perf_counter() - started) * 1000),
+                }
+            last_err = "未生成音频文件（可能被限流）"
+        except Exception as exc:
+            last_err = str(exc)
+        await asyncio.sleep(0.6 * (attempt + 1))
+        out.unlink(missing_ok=True)
 
-    if not out.exists() or out.stat().st_size == 0:
-        return {"error": "TTS 未生成音频"}
-
-    return {
-        "path": str(out),
-        "voice": chosen,
-        "cached": False,
-        "latency_ms": int((time.perf_counter() - started) * 1000),
-    }
+    return {"error": f"TTS 失败: {last_err}"}
 
 
 def synthesize_sync(
