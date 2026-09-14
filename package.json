@@ -1,0 +1,75 @@
+{
+  "name": "ai-translator",
+  "version": "0.1.0",
+  "description": "AI 智能翻译工具：文字 / 图片 / 视频 / 游戏",
+  "private": true,
+  "author": "ZHANGCHAO",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev:server\" \"npm:dev:vite\"",
+    "dev:vite": "vite",
+    "dev:server": ".venv\\Scripts\\python.exe -m uvicorn server.main:app --host 127.0.0.1 --port 8765 --reload",
+    "dev:electron": "wait-on tcp:127.0.0.1:5173 tcp:127.0.0.1:8765 && electron .",
+    "build": "vite build && electron-builder --win",
+    "build:dir": "vite build && electron-builder --win dir",
+    "build:vite": "vite build",
+    "start:app": "electron .",
+    "typecheck": "vue-tsc --noEmit",
+    "env:check": ".venv\\Scripts\\python.exe scripts\\env_check.py"
+  },
+  "dependencies": {
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "concurrently": "^9.1.2",
+    "electron": "^34.0.0",
+    "electron-builder": "^25.1.8",
+    "electron-packager": "^17.1.2",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.7",
+    "vue-tsc": "^2.2.0",
+    "wait-on": "^8.0.2"
+  },
+  "build": {
+    "appId": "com.zhangchao.aitranslator",
+    "productName": "AI智能翻译",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "dir",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "AI智能翻译-${version}-setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false
+    },
+    "electronDownload": {
+      "mirror": "https://npmmirror.com/mirrors/electron/"
+    }
+  },
+  "allowScripts": {
+    "electron@34.5.8": true
+  }
+}
